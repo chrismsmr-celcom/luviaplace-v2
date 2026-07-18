@@ -165,51 +165,48 @@ app.get("/search-rates", async (req, res) => {
   console.log(`👤 Adultes: ${adults}`);
 
   try {
-    let rates;
+    let response;
+    let rates = [];
+
+    // Construction du body de base
+    const requestBody = {
+      occupancies: [{ adults: parseInt(adults, 10) || 2 }],
+      currency: "USD",
+      guestNationality: "US",
+      checkin: checkin,
+      checkout: checkout,
+      maxRatesPerHotel: parseInt(maxRates, 10) || 20,
+      roomMapping: true,
+      includeHotelData: true,
+      timeout: 8
+    };
 
     // Cas 1: Recherche par hotelId
     if (hotelId) {
       console.log(`⏳ Récupération des tarifs pour l'hôtel ${hotelId}...`);
-      const response = await sdk.getFullRates({
-        hotelIds: [hotelId],
-        occupancies: [{ adults: parseInt(adults, 10) }],
-        currency: "USD",
-        guestNationality: "US",
-        checkin: checkin,
-        checkout: checkout,
-        maxRatesPerHotel: parseInt(maxRates),
-        roomMapping: true,
-        includeHotelData: true,
-        timeout: 8
-      });
+      requestBody.hotelIds = [hotelId];
+      response = await sdk.getFullRates(requestBody);
       rates = response.data || [];
     }
-    // Cas 2: Recherche par placeId ou aiSearch
-    else if (placeId || aiSearch) {
-      console.log(`⏳ Récupération des tarifs par ${placeId ? 'placeId' : 'aiSearch'}...`);
+    // Cas 2: Recherche par placeId
+    else if (placeId) {
+      console.log(`⏳ Récupération des tarifs pour le lieu ${placeId}...`);
+      requestBody.placeId = placeId;
+      response = await sdk.getFullRates(requestBody);
+      rates = response.data || [];
       
-      const requestBody = {
-        occupancies: [{ adults: parseInt(adults, 10) }],
-        currency: "USD",
-        guestNationality: "US",
-        checkin: checkin,
-        checkout: checkout,
-        maxRatesPerHotel: parseInt(maxRates),
-        roomMapping: true,
-        includeHotelData: true,
-        timeout: 8
-      };
-
-      if (placeId) {
-        requestBody.placeId = placeId;
-      } else if (aiSearch) {
-        requestBody.aiSearch = aiSearch;
-      }
-
-      const response = await sdk.getFullRates(requestBody);
-      rates = response.data || [];
+      console.log(`📊 Réponse reçue: ${rates.length} hôtels`);
     }
-    // Cas 3: Aucun critère
+    // Cas 3: Recherche par aiSearch
+    else if (aiSearch) {
+      console.log(`⏳ Récupération des tarifs par recherche AI: "${aiSearch}"...`);
+      requestBody.aiSearch = aiSearch;
+      response = await sdk.getFullRates(requestBody);
+      rates = response.data || [];
+      
+      console.log(`📊 Réponse reçue: ${rates.length} hôtels`);
+    }
+    // Cas 4: Aucun critère
     else {
       console.error("❌ Aucun critère de recherche fourni");
       return res.status(400).json({
@@ -218,65 +215,103 @@ app.get("/search-rates", async (req, res) => {
       });
     }
 
-    console.log(`✅ ${rates.length} hôtels dans la réponse`);
-
-    if (rates.length === 0) {
+    // Vérifier si on a des résultats
+    if (!rates || rates.length === 0) {
+      console.log(`⚠️ Aucun hôtel trouvé pour ces critères`);
       return res.json({ 
         success: false,
         error: "No availability found",
-        message: "Aucun hôtel trouvé pour ces critères"
+        message: "Aucun hôtel trouvé pour ces critères",
+        rateInfo: []
       });
     }
 
-    // Prendre le premier hôtel (ou le meilleur)
-    const hotel = rates[0];
-    const hotelInfo = hotel.hotel || {};
+    console.log(`✅ ${rates.length} hôtels dans la réponse`);
 
-    // Extraire les informations des chambres
-    const rateInfo = (hotel.roomTypes || []).flatMap(function(roomType) {
-      return (roomType.rates || []).map(function(rate) {
-        return {
-          rateName: rate.name,
-          offerId: roomType.offerId,
-          board: rate.boardName,
-          boardType: rate.boardType,
-          refundableTag: rate.cancellationPolicies?.refundableTag || 'NRFN',
-          retailRate: rate.retailRate?.total?.[0]?.amount || 0,
-          originalRate: rate.retailRate?.suggestedSellingPrice?.[0]?.amount || null,
-          maxOccupancy: rate.maxOccupancy || 0,
-          adultCount: rate.adultCount || 0,
-          childCount: rate.childCount || 0,
-          mappedRoomId: rate.mappedRoomId || null
-        };
-      });
-    });
+    // Parcourir tous les hôtels pour extraire les informations
+    const allHotels = [];
+    let globalMinPrice = null;
 
-    let minPrice = null;
-    rateInfo.forEach(function(r) {
-      if (r.retailRate > 0 && (minPrice === null || r.retailRate < minPrice)) {
-        minPrice = r.retailRate;
+    for (let i = 0; i < rates.length; i++) {
+      const hotel = rates[i];
+      const hotelData = hotel.hotel || {};
+      
+      // Vérifier si hotelData existe
+      if (!hotelData || !hotelData.name) {
+        console.log(`⚠️ Hôtel ${i} sans données, passage...`);
+        continue;
       }
-    });
 
-    console.log(`💰 ${rateInfo.length} tarifs disponibles, prix min: $${minPrice}`);
+      const rateInfo = (hotel.roomTypes || []).flatMap(function(roomType) {
+        return (roomType.rates || []).map(function(rate) {
+          const price = rate.retailRate?.total?.[0]?.amount || 0;
+          return {
+            rateName: rate.name || 'Chambre standard',
+            offerId: roomType.offerId || '',
+            board: rate.boardName || 'Non spécifié',
+            boardType: rate.boardType || '',
+            refundableTag: rate.cancellationPolicies?.refundableTag || 'NRFN',
+            retailRate: price,
+            originalRate: rate.retailRate?.suggestedSellingPrice?.[0]?.amount || null,
+            maxOccupancy: rate.maxOccupancy || 0,
+            adultCount: rate.adultCount || 0,
+            childCount: rate.childCount || 0,
+            mappedRoomId: rate.mappedRoomId || null
+          };
+        });
+      });
 
+      // Calculer le prix minimum pour cet hôtel
+      let minPrice = null;
+      rateInfo.forEach(function(r) {
+        if (r.retailRate > 0 && (minPrice === null || r.retailRate < minPrice)) {
+          minPrice = r.retailRate;
+        }
+      });
+
+      if (minPrice !== null && (globalMinPrice === null || minPrice < globalMinPrice)) {
+        globalMinPrice = minPrice;
+      }
+
+      allHotels.push({
+        hotelInfo: {
+          id: hotel.hotelId || '',
+          name: hotelData.name || 'Hôtel sans nom',
+          address: hotelData.address || '',
+          city: hotelData.city || '',
+          country: hotelData.country || '',
+          starRating: hotelData.starRating || 0,
+          rating: hotelData.rating || 0,
+          reviewCount: hotelData.reviewCount || 0,
+          main_photo: hotelData.main_photo || ''
+        },
+        rateInfo: rateInfo,
+        minPrice: minPrice
+      });
+    }
+
+    if (allHotels.length === 0) {
+      console.log(`⚠️ Aucun hôtel valide trouvé`);
+      return res.json({ 
+        success: false,
+        error: "No valid hotels found",
+        rateInfo: []
+      });
+    }
+
+    console.log(`💰 ${allHotels.length} hôtels traités, prix min global: $${globalMinPrice}`);
+
+    // Retourner le premier hôtel avec ses tarifs (pour compatibilité avec le frontend)
+    const firstHotel = allHotels[0];
     res.json({ 
       success: true,
-      hotelInfo: {
-        id: hotel.hotelId,
-        name: hotelInfo.name,
-        address: hotelInfo.address,
-        city: hotelInfo.city,
-        country: hotelInfo.country,
-        starRating: hotelInfo.starRating,
-        rating: hotelInfo.rating,
-        reviewCount: hotelInfo.reviewCount,
-        main_photo: hotelInfo.main_photo
-      },
-      rateInfo: rateInfo,
-      minPrice: minPrice,
-      totalRates: rateInfo.length
+      hotelInfo: firstHotel.hotelInfo,
+      rateInfo: firstHotel.rateInfo,
+      minPrice: firstHotel.minPrice,
+      totalRates: firstHotel.rateInfo.length,
+      allHotels: allHotels // Optionnel: tous les hôtels trouvés
     });
+
   } catch (error) {
     console.error("❌ Error fetching rates:", error);
     console.error("📝 Message:", error.message);
