@@ -1,296 +1,261 @@
 const express = require("express");
 const app = express();
 const bodyParser = require("body-parser");
-const liteApi = require("liteapi-node-sdk");
+const axios = require("axios");
 const cors = require("cors");
 const path = require("path");
 require("dotenv").config();
 
-app.use(
-  cors({
-    origin: "*",
-  })
-);
-
-const prod_apiKey = process.env.PROD_API_KEY;
-const sandbox_apiKey = process.env.SAND_API_KEY;
-
+app.use(cors({ origin: "*" }));
 app.use(bodyParser.json());
 
-app.get("/search-hotels", async (req, res) => {
-  console.log("Search endpoint hit");
-  const { checkin, checkout, adults, city, countryCode, environment } = req.query;
-  const apiKey = environment == "sandbox" ? sandbox_apiKey : prod_apiKey;
-  const sdk = liteApi(apiKey);
+// Configuration Nuitee Connect
+const API_BASE_URL = 'https://api.liteapi.travel/v3.0';
+const BOOK_BASE_URL = 'https://book.liteapi.travel/v3.0';
 
+// Clés API
+const prod_apiKey = process.env.PROD_API_KEY;
+const sandbox_apiKey = process.env.SAND_API_KEY || "sand_c0155ab8-c683-4f26-8f94-b5e92c5797b9";
+
+// Helper pour les appels API
+async function callNuiteeAPI(endpoint, method = 'GET', data = null, apiKey, isBook = false) {
+  const baseURL = isBook ? BOOK_BASE_URL : API_BASE_URL;
+  const url = `${baseURL}${endpoint}`;
+  
   try {
-    const response = await sdk.getHotels(countryCode, city, 0, 10);
-    const data = (await response).data;
-    const hotelIds = data.map((hotel) => hotel.id);
-    const rates = (
-      await sdk.getFullRates({
-        hotelIds: hotelIds,
-        occupancies: [{ adults: parseInt(adults, 10) }],
-        currency: "USD",
-        guestNationality: "US",
-        checkin: checkin,
-        checkout: checkout,
-      })
-    ).data;
-    rates.forEach((rate) => {
-      rate.hotel = data.find((hotel) => hotel.id === rate.hotelId);
-    });
-
-    res.json({ rates });
-  } catch (error) {
-    console.error("Error searching for hotels:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.get("/search-rates", async (req, res) => {
-  console.log("Rate endpoint hit");
-  const { checkin, checkout, adults, hotelId, environment } = req.query;
-  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
-  const sdk = liteApi(apiKey);
-
-  try {
-    // Fetch rates only for the specified hotel
-    const rates = (
-      await sdk.getFullRates({
-        hotelIds: [hotelId],
-        occupancies: [{ adults: parseInt(adults, 10) }],
-        currency: "USD",
-        guestNationality: "US",
-        checkin: checkin,
-        checkout: checkout,
-      })
-    ).data;
-
-    // Fetch hotel details
-    const hotelsResponse = await sdk.getHotelDetails(hotelId);
-    const hotelInfo = hotelsResponse.data;
-
-    // Prepare the response data
-    const rateInfo = rates.map((hotel) =>
-      hotel.roomTypes.flatMap((roomType) => {
-        // Define the board types we're interested in
-        const boardTypes = ["RO", "BI"];
-
-        // Filter rates by board type and sort by refundable tag
-        return boardTypes
-          .map((boardType) => {
-            const filteredRates = roomType.rates.filter((rate) => rate.boardType === boardType);
-
-            // Sort to prioritize 'RFN' over 'NRFN'
-            const sortedRates = filteredRates.sort((a, b) => {
-              if (
-                a.cancellationPolicies.refundableTag === "RFN" &&
-                b.cancellationPolicies.refundableTag !== "RFN"
-              ) {
-                return -1; // a before b
-              } else if (
-                b.cancellationPolicies.refundableTag === "RFN" &&
-                a.cancellationPolicies.refundableTag !== "RFN"
-              ) {
-                return 1; // b before a
-              }
-              return 0; // no change in order
-            });
-
-            // Return the first rate meeting the criteria if it exists
-            if (sortedRates.length > 0) {
-              const rate = sortedRates[0];
-              return {
-                rateName: rate.name,
-                offerId: roomType.offerId,
-                board: rate.boardName,
-                refundableTag: rate.cancellationPolicies.refundableTag,
-                retailRate: rate.retailRate.total[0].amount,
-                originalRate: rate.retailRate.suggestedSellingPrice[0].amount,
-              };
-            }
-            return null; // or some default object if no rates meet the criteria
-          })
-          .filter((rate) => rate !== null); // Filter out null values if no rates meet the criteria
-      })
-    );
-    res.json({ hotelInfo, rateInfo });
-  } catch (error) {
-    console.error("Error fetching rates:", error);
-    res.status(500).json({ error: "No availability found" });
-  }
-});
-
-app.post("/prebook", async (req, res) => {
-  //console.log(req.body);
-  const { rateId, environment, voucherCode } = req.body;
-  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
-  const sdk = liteApi(apiKey);
-  //console.log(apiKey, "apiKey");
-  const bodyData = {
-    offerId: rateId,
-    usePaymentSdk: true,
-  };
-
-  // Conditionally add the voucherCode if it exists in the request body
-  if (voucherCode) {
-    bodyData.voucherCode = voucherCode;
-  }
-
-  try {
-    // Call the SDK's prebook method and handle the response
-    sdk
-      .preBook(bodyData)
-      .then((response) => {
-        res.json({ success: response }); // Send response back to the client
-      })
-      .catch((err) => {
-        console.error("Error:", err); // Print the error if any
-        res.status(500).json({ error: "Internal Server Error" }); // Send error response
-      });
-  } catch (err) {
-    console.error(" Prebook error:", err); // Handle errors related to SDK usage
-    res.status(500).json({ error: "Internal Server Error" }); // Send error response
-  }
-});
-
-app.get("/book", (req, res) => {
-  console.log(req.query);
-  const { prebookId, guestFirstName, guestLastName, guestEmail, transactionId, environment } =
-    req.query;
-
-  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
-  const sdk = liteApi(apiKey);
-
-	// Prepare the booking data
-  const bodyData = {
-    holder: {
-      firstName: guestFirstName,
-      lastName: guestLastName,
-      email: guestEmail,
-    },
-    payment: {
-      method: "TRANSACTION_ID",
-      transactionId: transactionId,
-    },
-    prebookId: prebookId,
-    guests: [
-      {
-        occupancyNumber: 1,
-        remarks: "",
-        firstName: guestFirstName,
-        lastName: guestLastName,
-        email: guestEmail,
-      },
-    ],
-  };
-
-  console.log(bodyData);
-
-  sdk
-    .book(bodyData)
-    .then((data) => {
-      if (!data || data.error) {
-        // Validate if there's any error in the data
-        throw new Error(
-          "Error in booking data: " + (data.error ? data.error.message : "Unknown error")
-        );
+    const config = {
+      method: method,
+      url: url,
+      headers: {
+        'X-API-Key': apiKey,
+        'accept': 'application/json',
+        'content-type': 'application/json'
       }
+    };
+    
+    if (data && (method === 'POST' || method === 'PUT')) {
+      config.data = data;
+    } else if (data && method === 'GET') {
+      config.params = data;
+    }
+    
+    const response = await axios(config);
+    return response.data;
+  } catch (error) {
+    console.error(`Nuitee API error (${endpoint}):`, error.response?.data || error.message);
+    throw error;
+  }
+}
 
-      console.log(data);
-
-      res.send(`
-        <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Booking Confirmation</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        h1 {
-            color: #333;
-        }
-        .booking-details, .room-details, .policy-details {
-            margin-bottom: 20px;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-        }
-        .header {
-            font-weight: bold;
-            color: #444;
-        }
-    </style>
-</head>
-<body>
-    <h1>Booking Confirmation</h1>
-    <div class="booking-details">
-        <div class="header">Booking Information:</div>
-        <p>Booking ID: ${data.data.bookingId}</p>
-        <p>Supplier Name: ${data.data.supplierBookingName} (${data.data.supplier})</p>
-        <p>Status: ${data.data.status}</p>
-        <p>Check-in: ${data.data.checkin}</p>
-        <p>Check-out: ${data.data.checkout}</p>
-        <p>Hotel: ${data.data.hotel.name} (ID: ${data.data.hotel.hotelId})</p>
-    </div>
-
-    <div class="room-details">
-        <div class="header">Room Details:</div>
-        <p>Room Type: ${data.data.bookedRooms[0].roomType.name}</p>
-        <p>Rate (Total): $${data.data.bookedRooms[0].rate.retailRate.total.amount} ${
-        data.data.bookedRooms[0].rate.retailRate.total.currency
-      }</p>
-        <p>Occupancy: ${data.data.bookedRooms[0].adults} Adult(s), ${
-        data.data.bookedRooms[0].children
-      } Child(ren)</p>
-        <p>Guest Name: ${data.data.bookedRooms[0].firstName} ${
-        data.data.bookedRooms[0].lastName
-      }</p>
-    </div>
-<div class="policy-details">
-    <div class="header">Cancellation Policy:</div>
-    <p>Cancel By: ${
-      data.data.cancellationPolicies &&
-      data.data.cancellationPolicies.cancelPolicyInfos &&
-      data.data.cancellationPolicies.cancelPolicyInfos[0]
-        ? data.data.cancellationPolicies.cancelPolicyInfos[0].cancelTime
-        : "Not specified"
-    }</p>
-    <p>Cancellation Fee: ${
-      data.data.cancellationPolicies &&
-      data.data.cancellationPolicies.cancelPolicyInfos &&
-      data.data.cancellationPolicies.cancelPolicyInfos[0]
-        ? `$${data.data.cancellationPolicies.cancelPolicyInfos[0].amount}`
-        : "Not specified"
-    }</p>
-    <p>Remarks: ${data.data.remarks || "No additional remarks."}</p>
-</div>
-
-    <a href="/"><button>Back to Hotels</button></a>
-</body>
-</html>
-      `);
-    })
-    .catch((err) => {
-      console.error("Error during booking:", err);
-      res.status(500).send(`Failed to book: ${err.message}`);
-    });
+// ============================================
+// 1. RECHERCHE DE LIEUX (Places Autocomplete)
+// ============================================
+app.get("/api/search-places", async (req, res) => {
+  const { query, environment = "sandbox" } = req.query;
+  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
+  
+  try {
+    const response = await callNuiteeAPI(`/data/places?textQuery=${encodeURIComponent(query)}`, 'GET', null, apiKey);
+    res.json({ success: true, data: response.data });
+  } catch (error) {
+    console.error("Error searching places:", error);
+    res.status(500).json({ success: false, error: "Failed to search places" });
+  }
 });
 
-// Serve the client-side application
+// ============================================
+// 2. RECHERCHE DE TARIFS HÔTELIERS
+// ============================================
+app.post("/api/search-rates", async (req, res) => {
+  console.log("Search rates endpoint hit");
+  const { 
+    checkin, checkout, adults = 2, 
+    placeId, hotelIds, aiSearch,
+    currency = "USD", 
+    guestNationality = "US",
+    environment = "sandbox",
+    maxRatesPerHotel = 1
+  } = req.body;
+  
+  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
+  
+  // Construire le payload
+  const payload = {
+    occupancies: [{ adults: parseInt(adults, 10) }],
+    currency,
+    guestNationality,
+    checkin,
+    checkout,
+    roomMapping: true,
+    maxRatesPerHotel: parseInt(maxRatesPerHotel, 10),
+    includeHotelData: true
+  };
+  
+  // Ajouter soit placeId, soit hotelIds, soit aiSearch
+  if (placeId) {
+    payload.placeId = placeId;
+  } else if (hotelIds && Array.isArray(hotelIds)) {
+    payload.hotelIds = hotelIds;
+  } else if (aiSearch) {
+    payload.aiSearch = aiSearch;
+  } else {
+    return res.status(400).json({ 
+      success: false, 
+      error: "Missing search parameter: placeId, hotelIds, or aiSearch" 
+    });
+  }
+  
+  try {
+    const response = await callNuiteeAPI('/hotels/rates', 'POST', payload, apiKey);
+    res.json({ success: true, data: response });
+  } catch (error) {
+    console.error("Error searching rates:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to search rates",
+      details: error.response?.data || error.message 
+    });
+  }
+});
+
+// ============================================
+// 3. PRÉ-RÉSERVATION (Prebook)
+// ============================================
+app.post("/api/prebook", async (req, res) => {
+  console.log("Prebook endpoint hit");
+  const { offerId, environment = "sandbox" } = req.body;
+  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
+  
+  if (!offerId) {
+    return res.status(400).json({ success: false, error: "offerId is required" });
+  }
+  
+  try {
+    const payload = {
+      usePaymentSdk: true,
+      offerId: offerId
+    };
+    
+    const response = await callNuiteeAPI('/rates/prebook', 'POST', payload, apiKey, true);
+    res.json({ success: true, data: response.data });
+  } catch (error) {
+    console.error("Error during prebook:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Prebook failed",
+      details: error.response?.data || error.message 
+    });
+  }
+});
+
+// ============================================
+// 4. RÉSERVATION FINALE (Book)
+// ============================================
+app.post("/api/book", async (req, res) => {
+  console.log("Book endpoint hit");
+  const { 
+    prebookId, 
+    transactionId,
+    guestFirstName,
+    guestLastName,
+    guestEmail,
+    environment = "sandbox"
+  } = req.body;
+  
+  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
+  
+  if (!prebookId || !transactionId) {
+    return res.status(400).json({ 
+      success: false, 
+      error: "prebookId and transactionId are required" 
+    });
+  }
+  
+  try {
+    const payload = {
+      prebookId: prebookId,
+      holder: {
+        firstName: guestFirstName || "John",
+        lastName: guestLastName || "Doe",
+        email: guestEmail || "guest@example.com"
+      },
+      payment: {
+        method: "TRANSACTION_ID",
+        transactionId: transactionId
+      },
+      guests: [{
+        occupancyNumber: 1,
+        firstName: guestFirstName || "John",
+        lastName: guestLastName || "Doe",
+        email: guestEmail || "guest@example.com"
+      }]
+    };
+    
+    const response = await callNuiteeAPI('/rates/book', 'POST', payload, apiKey, true);
+    res.json({ success: true, data: response.data });
+  } catch (error) {
+    console.error("Error during booking:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Booking failed",
+      details: error.response?.data || error.message 
+    });
+  }
+});
+
+// ============================================
+// 5. DÉTAILS D'UN HÔTEL
+// ============================================
+app.get("/api/hotel-details", async (req, res) => {
+  const { hotelId, environment = "sandbox", timeout = 4 } = req.query;
+  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
+  
+  if (!hotelId) {
+    return res.status(400).json({ success: false, error: "hotelId is required" });
+  }
+  
+  try {
+    const response = await callNuiteeAPI(`/data/hotel?hotelId=${hotelId}&timeout=${timeout}`, 'GET', null, apiKey);
+    res.json({ success: true, data: response.data });
+  } catch (error) {
+    console.error("Error fetching hotel details:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: "Failed to fetch hotel details" 
+    });
+  }
+});
+
+// ============================================
+// 6. CONFIGURATION POUR LE PAYMENT SDK
+// ============================================
+app.get("/api/payment-config", (req, res) => {
+  const { secretKey, environment = "sandbox", returnUrl } = req.query;
+  
+  res.json({
+    success: true,
+    data: {
+      publicKey: environment === "sandbox" ? "sandbox" : "live",
+      secretKey: secretKey,
+      returnUrl: returnUrl || `${req.protocol}://${req.get('host')}/booking-confirmation`,
+      targetElement: "#payment-element"
+    }
+  });
+});
+
+// ============================================
+// SERVEUR
+// ============================================
+const port = process.env.PORT || 3000;
+
+// Servir le frontend si présent
+app.use(express.static(path.join(__dirname, "../client")));
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "../client/index.html"));
 });
 
-app.use(express.static(path.join(__dirname, "../client")));
-
-const port = 3000;
-
 app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+  console.log(`🚀 Server is running on port ${port}`);
+  console.log(`📌 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔑 Using sandbox key: ${sandbox_apiKey ? 'Yes' : 'No'}`);
 });
