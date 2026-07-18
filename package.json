@@ -7,7 +7,6 @@
     "start": "node server.js",
     "dev": "nodemon server.js"
   },
-  {
   "dependencies": {
     "liteapi-node-sdk": "^4.3.2",
     "axios": "^1.6.0",
