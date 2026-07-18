@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const liteApi = require("liteapi-node-sdk");
 const cors = require("cors");
 const path = require("path");
+const axios = require("axios");
 require("dotenv").config();
 
 // ============================================
@@ -18,7 +19,6 @@ app.use(
   })
 );
 
-// Pour les requêtes OPTIONS pré-flight
 app.options("*", cors());
 
 const prod_apiKey = process.env.PROD_API_KEY;
@@ -38,6 +38,49 @@ app.use((req, res, next) => {
     console.log(`📦 Query:`, req.query);
   }
   next();
+});
+
+// ============================================
+// RECHERCHE DE LIEUX (via API directe)
+// ============================================
+app.get("/search-places", async (req, res) => {
+  console.log("\n📍 ===== SEARCH PLACES ===== 📍");
+  const { query, environment } = req.query;
+  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
+
+  console.log(`🔍 Recherche: "${query}"`);
+
+  if (!query || query.length < 2) {
+    return res.json({ success: true, data: [] });
+  }
+
+  try {
+    // Appel direct à l'API LiteAPI pour les places
+    const response = await axios.get(
+      `https://api.liteapi.travel/v3.0/data/places?textQuery=${encodeURIComponent(query)}`,
+      {
+        headers: {
+          'X-API-Key': apiKey,
+          'accept': 'application/json'
+        }
+      }
+    );
+
+    const places = response.data?.data || [];
+    console.log(`✅ ${places.length} lieux trouvés`);
+
+    res.json({ 
+      success: true, 
+      data: places 
+    });
+  } catch (error) {
+    console.error("❌ Error searching places:", error.message);
+    res.status(500).json({ 
+      success: false,
+      error: "Failed to search places",
+      message: error.message
+    });
+  }
 });
 
 // ============================================
@@ -501,50 +544,23 @@ app.get("/hotel-reviews", async (req, res) => {
 });
 
 // ============================================
-// RECHERCHE DE LIEUX
-// ============================================
-app.get("/search-places", async (req, res) => {
-  console.log("\n📍 ===== SEARCH PLACES ===== 📍");
-  const { query, environment } = req.query;
-  const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
-  const sdk = liteApi(apiKey);
-
-  try {
-    const response = await sdk.searchPlaces(query);
-    res.json({ success: true, data: response.data });
-  } catch (error) {
-    console.error("❌ Error searching places:", error);
-    res.status(500).json({ 
-      success: false,
-      error: "Failed to search places",
-      message: error.message
-    });
-  }
-});
-
-// ============================================
 // SERVEUR - SERVIR LES FICHIERS STATIQUES
 // ============================================
 
-// Servir les fichiers statiques depuis le répertoire courant
 app.use(express.static(path.join(__dirname)));
 
-// Route principale
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// Route pour les résultats hébergement
 app.get("/resultats-hebergement.html", (req, res) => {
   res.sendFile(path.join(__dirname, "resultats-hebergement.html"));
 });
 
-// Route pour les résultats vols
 app.get("/resultats-vols.html", (req, res) => {
   res.sendFile(path.join(__dirname, "resultats-vols.html"));
 });
 
-// Route pour les détails hôtel
 app.get("/hotel-detail.html", (req, res) => {
   res.sendFile(path.join(__dirname, "hotel-detail.html"));
 });
@@ -561,13 +577,13 @@ app.listen(port, () => {
   console.log(`🔑 API Key (prod): ${prod_apiKey ? '✅' : '❌'}`);
   console.log(`🔑 API Key (sandbox): ${sandbox_apiKey ? '✅' : '❌'}`);
   console.log(`\n📋 ENDPOINTS:`);
+  console.log(`   📍 GET  /search-places     - Autocomplete de lieux (API directe)`);
   console.log(`   🔍 GET  /search-hotels     - Hôtels`);
   console.log(`   💰 GET  /search-rates      - Tarifs détaillés`);
   console.log(`   📋 POST /prebook           - Pré-réservation hôtel`);
   console.log(`   📝 POST /book              - Réservation hôtel`);
   console.log(`   🏨 GET  /hotel-details     - Détails hôtel`);
   console.log(`   ⭐ GET  /hotel-reviews     - Avis hôtel`);
-  console.log(`   📍 GET  /search-places     - Autocomplete`);
   console.log(`   ✈️ POST /search-flights    - Recherche vols`);
   console.log(`   ✈️ POST /prebook-flight    - Pré-réservation vol`);
   console.log(`   ✈️ POST /book-flight       - Réservation vol`);
