@@ -7,24 +7,19 @@ const path = require("path");
 require("dotenv").config();
 
 // ============================================
-// CORS - Limité en production
+// CORS - Autoriser toutes les origines pour le moment
 // ============================================
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',') 
-  : ['http://localhost:3000', 'https://luviaplace.com'];
-
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
     credentials: true
   })
 );
+
+// Pour les requêtes OPTIONS pré-flight
+app.options("*", cors());
 
 const prod_apiKey = process.env.PROD_API_KEY;
 const sandbox_apiKey = process.env.SAND_API_KEY;
@@ -46,7 +41,7 @@ app.use((req, res, next) => {
 });
 
 // ============================================
-// 1. RECHERCHE HÔTELS - OPTIMISÉ (1 seul appel)
+// RECHERCHE HÔTELS
 // ============================================
 app.get("/search-hotels", async (req, res) => {
   console.log("\n🔍 ===== SEARCH HOTELS ===== 🔍");
@@ -59,9 +54,6 @@ app.get("/search-hotels", async (req, res) => {
   console.log(`👤 Adultes: ${adults}`);
 
   try {
-    console.log(`⏳ Recherche des tarifs pour ${city}...`);
-    
-    // UN SEUL APPEL à l'API (pas getHotels + getFullRates)
     const response = await sdk.getFullRates({
       countryCode: countryCode,
       cityName: city,
@@ -71,15 +63,14 @@ app.get("/search-hotels", async (req, res) => {
       guestNationality: "US",
       occupancies: [{ adults: parseInt(adults, 10) }],
       limit: parseInt(limit),
-      maxRatesPerHotel: 1,  // Seulement le meilleur prix par hôtel pour le listing
-      timeout: 8,           // Recommandé par LiteAPI
-      includeHotelData: true // Pour avoir nom, photo, adresse
+      maxRatesPerHotel: 1,
+      timeout: 8,
+      includeHotelData: true
     });
 
     const data = response.data || [];
     console.log(`✅ ${data.length} hôtels avec tarifs trouvés`);
 
-    // Enrichir chaque hôtel avec son prix minimum
     const hotels = data.map(function(hotel) {
       const bestRate = hotel.roomTypes?.[0]?.rates?.[0];
       return {
@@ -100,7 +91,6 @@ app.get("/search-hotels", async (req, res) => {
       };
     });
 
-    console.log(`📤 Envoi de ${hotels.length} hôtels`);
     res.json({ 
       success: true,
       hotels: hotels,
@@ -117,7 +107,7 @@ app.get("/search-hotels", async (req, res) => {
 });
 
 // ============================================
-// 2. TARIFS DÉTAILLÉS HÔTEL
+// TARIFS DÉTAILLÉS HÔTEL
 // ============================================
 app.get("/search-rates", async (req, res) => {
   console.log("\n💰 ===== SEARCH RATES ===== 💰");
@@ -130,8 +120,6 @@ app.get("/search-rates", async (req, res) => {
   console.log(`👤 Adultes: ${adults}`);
 
   try {
-    console.log(`⏳ Récupération des tarifs pour l'hôtel ${hotelId}...`);
-    
     const response = await sdk.getFullRates({
       hotelIds: [hotelId],
       occupancies: [{ adults: parseInt(adults, 10) }],
@@ -176,16 +164,12 @@ app.get("/search-rates", async (req, res) => {
       });
     });
 
-    // Prix minimum
     let minPrice = null;
     rateInfo.forEach(function(r) {
       if (r.retailRate > 0 && (minPrice === null || r.retailRate < minPrice)) {
         minPrice = r.retailRate;
       }
     });
-
-    console.log(`✅ ${rateInfo.length} tarifs disponibles`);
-    console.log(`💰 Prix minimum: $${minPrice}`);
 
     res.json({ 
       success: true,
@@ -213,7 +197,7 @@ app.get("/search-rates", async (req, res) => {
 });
 
 // ============================================
-// 3. PRÉ-RÉSERVATION HÔTEL (POST - sécurisé)
+// PRÉ-RÉSERVATION HÔTEL
 // ============================================
 app.post("/prebook", async (req, res) => {
   console.log("\n📋 ===== PREBOOK ===== 📋");
@@ -230,7 +214,6 @@ app.post("/prebook", async (req, res) => {
   const sdk = liteApi(apiKey);
 
   console.log(`🔑 Offer ID: ${offerId}`);
-  console.log(`🎫 Voucher: ${voucherCode || 'Aucun'}`);
 
   const bodyData = {
     offerId: offerId,
@@ -242,12 +225,7 @@ app.post("/prebook", async (req, res) => {
   }
 
   try {
-    console.log(`⏳ Pré-réservation en cours...`);
     const response = await sdk.preBook(bodyData);
-    
-    console.log(`✅ Pré-réservation réussie!`);
-    console.log(`🆔 Prebook ID: ${response.data?.prebookId}`);
-    
     res.json({ 
       success: true, 
       data: response.data 
@@ -263,7 +241,7 @@ app.post("/prebook", async (req, res) => {
 });
 
 // ============================================
-// 4. RÉSERVATION FINALE HÔTEL (POST - sécurisé)
+// RÉSERVATION FINALE HÔTEL
 // ============================================
 app.post("/book", async (req, res) => {
   console.log("\n📝 ===== BOOK ===== 📝");
@@ -277,7 +255,6 @@ app.post("/book", async (req, res) => {
     environment 
   } = req.body;
 
-  // Validation des champs requis
   if (!prebookId) {
     return res.status(400).json({ 
       success: false,
@@ -297,26 +274,19 @@ app.post("/book", async (req, res) => {
     });
   }
 
-  console.log(`🆔 Prebook ID: ${prebookId}`);
-  console.log(`👤 Guest: ${guestFirstName} ${guestLastName}`);
-  console.log(`📧 Email: ${guestEmail}`);
-  console.log(`📱 Phone: ${guestPhone}`);
-  console.log(`💳 Transaction ID: ${transactionId}`);
-
   const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
-  // ✅ Corps correct selon l'API LiteAPI
   const bodyData = {
     prebookId: prebookId,
     holder: {
       firstName: guestFirstName,
       lastName: guestLastName,
       email: guestEmail,
-      phone: guestPhone || '+1234567890' // Phone est requis par l'API
+      phone: guestPhone || '+1234567890'
     },
     payment: {
-      method: "TRANSACTION_ID", // ✅ Exactement ce nom
+      method: "TRANSACTION_ID",
       transactionId: transactionId
     },
     guests: [
@@ -330,15 +300,8 @@ app.post("/book", async (req, res) => {
     ]
   };
 
-  console.log(`📦 Données de réservation:`, JSON.stringify(bodyData, null, 2));
-
   try {
-    console.log(`⏳ Réservation en cours...`);
     const response = await sdk.book(bodyData);
-    
-    console.log(`✅ Réservation réussie!`);
-    console.log(`🆔 Booking ID: ${response.data?.bookingId}`);
-    
     res.json({ 
       success: true, 
       data: response.data 
@@ -354,7 +317,7 @@ app.post("/book", async (req, res) => {
 });
 
 // ============================================
-// 5. RECHERCHE VOLS
+// RECHERCHE VOLS
 // ============================================
 app.post("/search-flights", async (req, res) => {
   console.log("\n✈️ ===== SEARCH FLIGHTS ===== ✈️");
@@ -363,10 +326,8 @@ app.post("/search-flights", async (req, res) => {
   const sdk = liteApi(apiKey);
 
   console.log(`📍 Itinéraire:`, JSON.stringify(legs, null, 2));
-  console.log(`👤 Adultes: ${adults}, Enfants: ${children}, Bébés: ${infants}`);
 
   try {
-    console.log(`⏳ Recherche de vols...`);
     const response = await sdk.searchFlights({
       legs: legs,
       adults: adults || 1,
@@ -377,9 +338,6 @@ app.post("/search-flights", async (req, res) => {
       cabinClass: cabinClass || "ECONOMY"
     });
 
-    const journeys = response.data?.[0]?.journeys || [];
-    console.log(`✅ ${journeys.length} voyages trouvés`);
-    
     res.json({ success: true, data: response.data });
   } catch (error) {
     console.error("❌ Error searching flights:", error);
@@ -392,7 +350,7 @@ app.post("/search-flights", async (req, res) => {
 });
 
 // ============================================
-// 6. VÉRIFICATION VOL
+// VÉRIFICATION VOL
 // ============================================
 app.post("/verify-flight", async (req, res) => {
   console.log("\n🔎 ===== VERIFY FLIGHT ===== 🔎");
@@ -400,12 +358,8 @@ app.post("/verify-flight", async (req, res) => {
   const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
-  console.log(`🆔 Offer ID: ${offerId}`);
-
   try {
-    console.log(`⏳ Vérification de l'offre...`);
     const response = await sdk.verifyFlight({ offerId });
-    console.log(`✅ Offre vérifiée avec succès`);
     res.json({ success: true, data: response.data });
   } catch (error) {
     console.error("❌ Error verifying flight:", error);
@@ -418,7 +372,7 @@ app.post("/verify-flight", async (req, res) => {
 });
 
 // ============================================
-// 7. PRÉ-RÉSERVATION VOL
+// PRÉ-RÉSERVATION VOL
 // ============================================
 app.post("/prebook-flight", async (req, res) => {
   console.log("\n📋 ===== PREBOOK FLIGHT ===== 📋");
@@ -426,11 +380,7 @@ app.post("/prebook-flight", async (req, res) => {
   const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
-  console.log(`🆔 Offer ID: ${offerId}`);
-  console.log(`👤 Contact: ${contact?.firstName} ${contact?.lastName}`);
-
   try {
-    console.log(`⏳ Pré-réservation du vol...`);
     const response = await sdk.prebookFlight({
       offerId: offerId,
       usePaymentSdk: usePaymentSdk !== undefined ? usePaymentSdk : true,
@@ -438,7 +388,6 @@ app.post("/prebook-flight", async (req, res) => {
       passengers: passengers
     });
 
-    console.log(`✅ Pré-réservation réussie!`);
     res.json({ success: true, data: response.data });
   } catch (error) {
     console.error("❌ Error prebooking flight:", error);
@@ -451,7 +400,7 @@ app.post("/prebook-flight", async (req, res) => {
 });
 
 // ============================================
-// 8. RÉSERVATION FINALE VOL
+// RÉSERVATION FINALE VOL
 // ============================================
 app.post("/book-flight", async (req, res) => {
   console.log("\n📝 ===== BOOK FLIGHT ===== 📝");
@@ -459,11 +408,7 @@ app.post("/book-flight", async (req, res) => {
   const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
-  console.log(`🆔 Prebook ID: ${prebookId}`);
-  console.log(`💳 Transaction ID: ${transactionId}`);
-
   try {
-    console.log(`⏳ Réservation du vol...`);
     const response = await sdk.bookFlight({
       prebookId: prebookId,
       payment: {
@@ -472,7 +417,6 @@ app.post("/book-flight", async (req, res) => {
       }
     });
 
-    console.log(`✅ Réservation réussie!`);
     res.json({ success: true, data: response.data });
   } catch (error) {
     console.error("❌ Error booking flight:", error);
@@ -485,7 +429,7 @@ app.post("/book-flight", async (req, res) => {
 });
 
 // ============================================
-// 9. DÉTAILS HÔTEL
+// DÉTAILS HÔTEL
 // ============================================
 app.get("/hotel-details", async (req, res) => {
   console.log("\n🏨 ===== HOTEL DETAILS ===== 🏨");
@@ -493,17 +437,10 @@ app.get("/hotel-details", async (req, res) => {
   const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
-  console.log(`🆔 Hotel ID: ${hotelId}`);
-
   try {
-    console.log(`⏳ Récupération des détails...`);
     const response = await sdk.getHotelDetails(hotelId, timeout);
     const hotel = response.data;
 
-    console.log(`🏨 Hôtel: ${hotel.name}`);
-    console.log(`🛏️ Chambres: ${hotel.rooms?.length || 0}`);
-
-    // Extraire les chambres avec photos
     const rooms = (hotel.rooms || []).map(function(room) {
       return {
         id: room.id,
@@ -542,7 +479,7 @@ app.get("/hotel-details", async (req, res) => {
 });
 
 // ============================================
-// 10. AVIS HÔTEL
+// AVIS HÔTEL
 // ============================================
 app.get("/hotel-reviews", async (req, res) => {
   console.log("\n⭐ ===== HOTEL REVIEWS ===== ⭐");
@@ -550,13 +487,8 @@ app.get("/hotel-reviews", async (req, res) => {
   const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
-  console.log(`🆔 Hotel ID: ${hotelId}`);
-
   try {
-    console.log(`⏳ Récupération des avis...`);
     const response = await sdk.getHotelReviews(hotelId, timeout);
-    console.log(`✅ ${response.data?.length || 0} avis récupérés`);
-    
     res.json({ success: true, data: response.data });
   } catch (error) {
     console.error("❌ Error getting hotel reviews:", error);
@@ -569,7 +501,7 @@ app.get("/hotel-reviews", async (req, res) => {
 });
 
 // ============================================
-// 11. RECHERCHE DE LIEUX
+// RECHERCHE DE LIEUX
 // ============================================
 app.get("/search-places", async (req, res) => {
   console.log("\n📍 ===== SEARCH PLACES ===== 📍");
@@ -577,13 +509,8 @@ app.get("/search-places", async (req, res) => {
   const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
-  console.log(`🔍 Recherche: "${query}"`);
-
   try {
-    console.log(`⏳ Recherche de lieux...`);
     const response = await sdk.searchPlaces(query);
-    console.log(`✅ ${response.data?.length || 0} lieux trouvés`);
-    
     res.json({ success: true, data: response.data });
   } catch (error) {
     console.error("❌ Error searching places:", error);
@@ -596,24 +523,34 @@ app.get("/search-places", async (req, res) => {
 });
 
 // ============================================
-// ROUTES FRONTEND
+// SERVEUR - SERVIR LES FICHIERS STATIQUES
 // ============================================
+
+// Servir les fichiers statiques depuis le répertoire courant
 app.use(express.static(path.join(__dirname)));
 
+// Route principale
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-app.get("/results.html", (req, res) => {
-  res.sendFile(path.join(__dirname, "results.html"));
+// Route pour les résultats hébergement
+app.get("/resultats-hebergement.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "resultats-hebergement.html"));
 });
 
+// Route pour les résultats vols
+app.get("/resultats-vols.html", (req, res) => {
+  res.sendFile(path.join(__dirname, "resultats-vols.html"));
+});
+
+// Route pour les détails hôtel
 app.get("/hotel-detail.html", (req, res) => {
   res.sendFile(path.join(__dirname, "hotel-detail.html"));
 });
 
 // ============================================
-// SERVEUR
+// PORT
 // ============================================
 const port = process.env.PORT || 3000;
 
@@ -624,10 +561,10 @@ app.listen(port, () => {
   console.log(`🔑 API Key (prod): ${prod_apiKey ? '✅' : '❌'}`);
   console.log(`🔑 API Key (sandbox): ${sandbox_apiKey ? '✅' : '❌'}`);
   console.log(`\n📋 ENDPOINTS:`);
-  console.log(`   🔍 GET  /search-hotels     - Hôtels (1 appel optimisé)`);
+  console.log(`   🔍 GET  /search-hotels     - Hôtels`);
   console.log(`   💰 GET  /search-rates      - Tarifs détaillés`);
   console.log(`   📋 POST /prebook           - Pré-réservation hôtel`);
-  console.log(`   📝 POST /book              - Réservation hôtel (POST sécurisé)`);
+  console.log(`   📝 POST /book              - Réservation hôtel`);
   console.log(`   🏨 GET  /hotel-details     - Détails hôtel`);
   console.log(`   ⭐ GET  /hotel-reviews     - Avis hôtel`);
   console.log(`   📍 GET  /search-places     - Autocomplete`);
