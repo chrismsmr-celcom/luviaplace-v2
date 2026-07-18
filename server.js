@@ -154,41 +154,85 @@ app.get("/search-hotels", async (req, res) => {
 // ============================================
 app.get("/search-rates", async (req, res) => {
   console.log("\n💰 ===== SEARCH RATES ===== 💰");
-  const { checkin, checkout, adults, hotelId, environment, maxRates = 20 } = req.query;
+  const { checkin, checkout, adults, hotelId, placeId, aiSearch, environment, maxRates = 20 } = req.query;
   const apiKey = environment === "sandbox" ? sandbox_apiKey : prod_apiKey;
   const sdk = liteApi(apiKey);
 
-  console.log(`🏨 Hotel ID: ${hotelId}`);
+  console.log(`🏨 Hotel ID: ${hotelId || 'non fourni'}`);
+  console.log(`📍 Place ID: ${placeId || 'non fourni'}`);
+  console.log(`🔍 AI Search: ${aiSearch || 'non utilisé'}`);
   console.log(`📅 Arrivée: ${checkin}, Départ: ${checkout}`);
   console.log(`👤 Adultes: ${adults}`);
 
   try {
-    const response = await sdk.getFullRates({
-      hotelIds: [hotelId],
-      occupancies: [{ adults: parseInt(adults, 10) }],
-      currency: "USD",
-      guestNationality: "US",
-      checkin: checkin,
-      checkout: checkout,
-      maxRatesPerHotel: parseInt(maxRates),
-      roomMapping: true,
-      includeHotelData: true,
-      timeout: 8
-    });
+    let rates;
 
-    const rates = response.data || [];
+    // Cas 1: Recherche par hotelId
+    if (hotelId) {
+      console.log(`⏳ Récupération des tarifs pour l'hôtel ${hotelId}...`);
+      const response = await sdk.getFullRates({
+        hotelIds: [hotelId],
+        occupancies: [{ adults: parseInt(adults, 10) }],
+        currency: "USD",
+        guestNationality: "US",
+        checkin: checkin,
+        checkout: checkout,
+        maxRatesPerHotel: parseInt(maxRates),
+        roomMapping: true,
+        includeHotelData: true,
+        timeout: 8
+      });
+      rates = response.data || [];
+    }
+    // Cas 2: Recherche par placeId ou aiSearch
+    else if (placeId || aiSearch) {
+      console.log(`⏳ Récupération des tarifs par ${placeId ? 'placeId' : 'aiSearch'}...`);
+      
+      const requestBody = {
+        occupancies: [{ adults: parseInt(adults, 10) }],
+        currency: "USD",
+        guestNationality: "US",
+        checkin: checkin,
+        checkout: checkout,
+        maxRatesPerHotel: parseInt(maxRates),
+        roomMapping: true,
+        includeHotelData: true,
+        timeout: 8
+      };
+
+      if (placeId) {
+        requestBody.placeId = placeId;
+      } else if (aiSearch) {
+        requestBody.aiSearch = aiSearch;
+      }
+
+      const response = await sdk.getFullRates(requestBody);
+      rates = response.data || [];
+    }
+    // Cas 3: Aucun critère
+    else {
+      console.error("❌ Aucun critère de recherche fourni");
+      return res.status(400).json({
+        success: false,
+        error: "Missing search criteria: hotelId, placeId or aiSearch required"
+      });
+    }
+
     console.log(`✅ ${rates.length} hôtels dans la réponse`);
 
     if (rates.length === 0) {
       return res.json({ 
         success: false,
-        error: "No availability found" 
+        error: "No availability found",
+        message: "Aucun hôtel trouvé pour ces critères"
       });
     }
 
+    // Prendre le premier hôtel (ou le meilleur)
     const hotel = rates[0];
     const hotelInfo = hotel.hotel || {};
 
+    // Extraire les informations des chambres
     const rateInfo = (hotel.roomTypes || []).flatMap(function(roomType) {
       return (roomType.rates || []).map(function(rate) {
         return {
@@ -214,6 +258,8 @@ app.get("/search-rates", async (req, res) => {
       }
     });
 
+    console.log(`💰 ${rateInfo.length} tarifs disponibles, prix min: $${minPrice}`);
+
     res.json({ 
       success: true,
       hotelInfo: {
@@ -224,17 +270,24 @@ app.get("/search-rates", async (req, res) => {
         country: hotelInfo.country,
         starRating: hotelInfo.starRating,
         rating: hotelInfo.rating,
+        reviewCount: hotelInfo.reviewCount,
         main_photo: hotelInfo.main_photo
       },
       rateInfo: rateInfo,
-      minPrice: minPrice
+      minPrice: minPrice,
+      totalRates: rateInfo.length
     });
   } catch (error) {
     console.error("❌ Error fetching rates:", error);
+    console.error("📝 Message:", error.message);
+    if (error.response) {
+      console.error("📄 Response data:", error.response.data);
+    }
     res.status(500).json({ 
       success: false,
-      error: "No availability found",
-      message: error.message
+      error: "Failed to fetch rates",
+      message: error.message,
+      details: error.response?.data || null
     });
   }
 });
