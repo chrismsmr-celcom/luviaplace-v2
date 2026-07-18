@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vols — LuviaPlace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --blue:#155EEF; --blue-dark:#0E3FB0; --ink:#101828; --ink-soft:#475467;
+    --line:#E7EAF0; --bg:#FFFFFF; --bg-soft:#F7F9FC; --green:#12805C; --green-bg:#E7F6EF;
+    --amber:#F5A623; --river:#1B6E6A;
+    --font-head:'Manrope', sans-serif; --font-body:'Inter', sans-serif;
+    --radius-lg:20px; --radius-md:14px;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ font-family:var(--font-body); color:var(--ink); background:var(--bg); line-height:1.5; }
+  a{ text-decoration:none; color:inherit; }
+  img{ display:block; width:100%; height:100%; object-fit:cover; }
+  button{ font-family:inherit; cursor:pointer; }
+  .wrap{ max-width:1240px; margin:0 auto; padding:0 clamp(20px,4vw,48px); }
+
+  header.results-header{ display:flex; align-items:center; gap:18px; padding:14px clamp(20px,4vw,48px); border-bottom:1px solid var(--line); position:sticky; top:0; background:rgba(255,255,255,0.95); backdrop-filter:blur(8px); z-index:100; flex-wrap:wrap; }
+  .logo-img{ height:34px; width:auto; flex-shrink:0; }
+  .rh-left{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .service-switcher{ position:relative; }
+  .service-switcher-btn{ display:flex; align-items:center; gap:6px; font-weight:700; font-size:14.5px; font-family:var(--font-head); padding:8px 10px; border-radius:8px; border:none; background:transparent; color:var(--ink); }
+  .service-switcher-btn:hover{ background:var(--bg-soft); }
+  .service-switcher-btn svg{ width:14px; height:14px; color:var(--ink-soft); }
+  .service-switcher-menu{ position:absolute; top:calc(100% + 8px); left:0; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 16px 40px rgba(16,24,40,0.16); min-width:190px; display:none; overflow:hidden; z-index:120; }
+  .service-switcher-menu.open{ display:block; }
+  .service-switcher-menu a{ display:flex; align-items:center; gap:10px; padding:11px 14px; font-size:13.5px; font-weight:600; }
+  .service-switcher-menu a:hover{ background:var(--bg-soft); }
+  .service-switcher-menu a.current{ color:var(--blue); background:var(--bg-soft); }
+  .service-switcher-menu svg{ width:15px; height:15px; }
+
+  .search-condensed{ flex:1; display:flex; align-items:center; gap:0; border:1px solid var(--line); border-radius:100px; padding:6px 6px 6px 8px; max-width:680px; min-width:300px; }
+  .search-condensed .swap-mini{ width:26px; height:26px; border-radius:100px; background:var(--bg-soft); display:flex; align-items:center; justify-content:center; margin:0 6px; flex-shrink:0; border:none; cursor:pointer; }
+  .search-condensed .swap-mini svg{ width:12px; height:12px; color:var(--ink-soft); }
+  .search-condensed .seg{ padding:0 12px; font-size:13.5px; font-weight:700; border-right:1px solid var(--line); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .search-condensed .seg:last-of-type{ border-right:none; }
+  .search-condensed .go-btn{ margin-left:auto; width:34px; height:34px; border-radius:100px; background:var(--blue); color:#fff; display:flex; align-items:center; justify-content:center; border:none; flex-shrink:0; }
+  .search-condensed .go-btn svg{ width:15px; height:15px; }
+  .rh-right{ display:flex; align-items:center; gap:10px; margin-left:auto; flex-shrink:0; }
+  .icon-btn{ width:40px; height:40px; border-radius:10px; background:var(--bg-soft); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; color:var(--ink-soft); }
+  .icon-btn svg{ width:18px; height:18px; }
+  .btn-primary{ background:var(--blue); color:#fff; font-weight:700; font-size:14.5px; padding:11px 20px; border-radius:10px; border:none; }
+  @media (max-width:900px){ .search-condensed{ order:3; flex:1 1 100%; max-width:none; } }
+
+  .results-layout{ display:grid; grid-template-columns:290px 1fr; gap:26px; max-width:1320px; margin:0 auto; padding:26px clamp(20px,4vw,48px) 72px; align-items:start; }
+  @media (max-width:960px){ .results-layout{ grid-template-columns:1fr; } }
+  .sidebar{ position:sticky; top:90px; display:flex; flex-direction:column; gap:14px; }
+  details.filter-group{ border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
+  details.filter-group summary{ display:flex; justify-content:space-between; align-items:center; padding:14px 16px; font-weight:700; font-size:14.5px; cursor:pointer; list-style:none; font-family:var(--font-head); }
+  details.filter-group summary::-webkit-details-marker{ display:none; }
+  details.filter-group summary::after{ content:'⌄'; color:var(--ink-soft); font-size:16px; transition:transform .15s ease; }
+  details.filter-group[open] summary::after{ transform:rotate(180deg); }
+  .fg-body{ padding:0 16px 16px; display:flex; flex-direction:column; gap:10px; }
+  .radio-item, .check-item{ display:flex; align-items:center; gap:10px; font-size:13.5px; }
+  .radio-item input{ accent-color:var(--blue); width:16px; height:16px; }
+  .check-item input{ accent-color:var(--blue); width:16px; height:16px; }
+  .toggle-row{ display:flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; margin-bottom:4px; }
+  .toggle-row button{ flex:1; padding:7px; font-size:12.5px; font-weight:600; background:#fff; border:none; color:var(--ink-soft); cursor:pointer; }
+  .toggle-row button.active{ background:var(--bg-soft); color:var(--ink); }
+  .range-mini{ display:flex; justify-content:space-between; font-size:12px; color:var(--ink-soft); font-weight:600; }
+  .range-track{ height:4px; background:var(--line); border-radius:100px; position:relative; margin:10px 4px 14px; }
+  .range-track .fill{ position:absolute; left:0; right:0; top:0; bottom:0; background:var(--blue); border-radius:100px; }
+  .range-track .handle{ position:absolute; top:50%; width:14px; height:14px; border-radius:100px; background:#fff; border:2px solid var(--blue); transform:translate(-50%,-50%); }
+
+  .results-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:12px; }
+  .results-count{ font-family:var(--font-head); font-weight:800; font-size:20px; }
+  .ai-refine{ display:flex; align-items:center; gap:8px; border:1px solid var(--blue); color:var(--blue); border-radius:100px; padding:9px 16px; font-size:13px; font-weight:700; background:#fff; cursor:pointer; }
+
+  .sort-tabs{ display:flex; border:1px solid var(--line); border-radius:14px; overflow:hidden; margin-bottom:20px; }
+  .sort-tab{ flex:1; padding:14px 10px; text-align:center; border-right:1px solid var(--line); background:#fff; cursor:pointer; }
+  .sort-tab:last-child{ border-right:none; }
+  .sort-tab.active{ background:var(--bg-soft); }
+  .sort-tab .name{ font-weight:700; font-size:13px; color:var(--ink-soft); }
+  .sort-tab.active .name{ color:var(--blue); }
+  .sort-tab .price{ font-weight:800; font-size:15px; margin-top:3px; font-family:var(--font-head); }
+  .sort-tab .dur{ font-size:11.5px; color:var(--ink-soft); }
+
+  .flight-result{ border:1px solid var(--line); border-radius:16px; padding:22px; margin-bottom:16px; position:relative; background:#fff; }
+  .price-top{ position:absolute; top:22px; right:22px; text-align:right; }
+  .price-top .amount{ font-family:var(--font-head); font-weight:800; font-size:22px; }
+  .price-top .note{ font-size:11px; color:var(--ink-soft); }
+  .flight-leg{ display:flex; align-items:center; gap:16px; margin-bottom:16px; padding-right:130px; }
+  @media (max-width:700px){ .flight-leg{ padding-right:0; flex-wrap:wrap; } .price-top{ position:static; text-align:left; margin-bottom:14px; } }
+  .leg-label{ width:78px; flex-shrink:0; font-size:12.5px; color:var(--ink-soft); }
+  .leg-label b{ display:block; color:var(--ink); font-size:14px; }
+  .airline-badge{ width:34px; height:34px; border-radius:100px; background:var(--bg-soft); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:10.5px; font-weight:800; color:var(--blue); }
+  .flight-route{ flex:1; display:flex; align-items:center; gap:14px; min-width:220px; }
+  .flight-time{ font-family:var(--font-head); font-weight:800; font-size:18px; }
+  .flight-time .code{ display:block; font-size:11px; font-weight:600; color:var(--blue); }
+  .flight-line-wrap{ flex:1; text-align:center; }
+  .flight-line{ position:relative; height:2px; background:var(--line); margin:0 4px; }
+  .flight-line .stop-dot{ position:absolute; top:-2px; left:50%; width:6px; height:6px; border-radius:100px; background:var(--ink-soft); }
+  .flight-meta{ font-size:11px; color:var(--ink-soft); margin-top:6px; }
+  .flight-bottom{ display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:6px; padding-top:14px; border-top:1px solid var(--line); }
+  .amenity-icons{ display:flex; gap:10px; color:var(--ink-soft); }
+  .amenity-icons svg{ width:16px; height:16px; }
+  .details-link{ font-size:13px; font-weight:600; text-decoration:underline; color:var(--ink-soft); cursor:pointer; }
+  .cta-btn-sm{ background:var(--blue); color:#fff; font-weight:700; font-size:13.5px; padding:10px 18px; border-radius:9px; border:none; cursor:pointer; transition:background .2s; }
+  .cta-btn-sm:hover{ background:var(--blue-dark); }
+
+  .skeleton{ animation:pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ opacity:.4; } 50%{ opacity:.8; } }
+  .skeleton-flight{ border:1px solid var(--line); border-radius:16px; padding:22px; margin-bottom:16px; }
+  .skeleton-line{ height:14px; border-radius:8px; background:var(--bg-soft); margin-bottom:8px; }
+  .skeleton-line.w70{ width:70%; }
+  .skeleton-line.w50{ width:50%; }
+  .skeleton-line.w40{ width:40%; }
+  .skeleton-line.w30{ width:30%; }
+  .skeleton-line.w90{ width:90%; }
+
+  footer{ background:var(--ink); color:rgba(255,255,255,0.7); padding:56px 0 28px; }
+  .footer-grid{ display:grid; grid-template-columns:1.4fr repeat(4,1fr); gap:32px; margin-bottom:40px; }
+  @media (max-width:820px){ .footer-grid{ grid-template-columns:1fr 1fr; } }
+  .footer-grid .logo-img{ filter:brightness(0) invert(1); margin-bottom:14px; }
+  .footer-grid p{ font-size:13.5px; max-width:260px; }
+  .footer-col h5{ font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:rgba(255,255,255,0.5); margin-bottom:14px; font-weight:700; }
+  .footer-col a{ display:block; font-size:13.5px; margin-bottom:10px; color:rgba(255,255,255,0.85); }
+  .footer-bottom{ display:flex; justify-content:space-between; padding-top:24px; border-top:1px solid rgba(255,255,255,0.12); font-size:12.5px; flex-wrap:wrap; gap:10px; color:rgba(255,255,255,0.55); }
+</style>
+</head>
+<body>
+
+<header class="results-header">
+  <div class="rh-left">
+    <img class="logo-img" src="https://ukbekfcjfcjcqrpxfpmq.supabase.co/storage/v1/object/public/logo%20luvia/LUVIA%20TRAVEL%20LOGO%20SANS%20BACKGROUND.png" alt="LuviaPlace">
+    <div class="service-switcher" id="serviceSwitcher">
+      <button class="service-switcher-btn" id="switcherBtn" type="button">Vols <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button>
+      <div class="service-switcher-menu" id="switcherMenu">
+        <a href="resultats-hebergement.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6"/></svg>Séjours</a>
+        <a href="resultats-vols.html" class="current"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 16l20-8-8 20-3-8-9-4z"/></svg>Vols</a>
+        <a href="resultats-voiture.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l2-6h14l2 6M5 13h14v5H5z"/><circle cx="7.5" cy="18" r="1.2"/><circle cx="16.5" cy="18" r="1.2"/></svg>Voiture</a>
+        <a href="resultats-experiences.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Expériences</a>
+        <a href="resultats-assurance.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/></svg>Assurance</a>
+      </div>
+    </div>
+  </div>
+  <div class="search-condensed">
+    <div class="seg" id="flightOrigin">Kinshasa (FIH)</div>
+    <button class="swap-mini" onclick="swapFlight()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h13l-4-4M17 17H4l4 4"/></svg></button>
+    <div class="seg" id="flightDest">Bruxelles (BRU)</div>
+    <div class="seg" id="flightDates">Août 12 - Août 19</div>
+    <div class="seg" id="flightPassengers">1 Passager · Économie</div>
+    <button class="go-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
+  </div>
+  <div class="rh-right">
+    <button class="icon-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 010 18M12 3a15 15 0 000 18"/></svg></button>
+    <button class="btn-primary">Se connecter</button>
+  </div>
+</header>
+
+<div class="results-layout">
+  <aside class="sidebar">
+    <details class="filter-group" open>
+      <summary>Arrêts</summary>
+      <div class="fg-body">
+        <label class="radio-item"><input type="radio" name="stops" checked>N'importe quel arrêt</label>
+        <label class="radio-item"><input type="radio" name="stops">Vols directs uniquement</label>
+        <label class="radio-item"><input type="radio" name="stops">Max. 1 escale</label>
+        <label class="radio-item"><input type="radio" name="stops">Max. 2 escales</label>
+      </div>
+    </details>
+
+    <details class="filter-group" open>
+      <summary>Inclus dans le tarif</summary>
+      <div class="fg-body">
+        <label class="check-item"><input type="checkbox">Bagage cabine inclus</label>
+        <label class="check-item"><input type="checkbox">Bagage en soute inclus</label>
+        <label class="check-item"><input type="checkbox">Remboursable</label>
+      </div>
+    </details>
+
+    <details class="filter-group">
+      <summary>Horaires</summary>
+      <div class="fg-body">
+        <div class="toggle-row"><button class="active">Aller</button><button>Retour</button></div>
+        <div class="range-mini"><span>Heure de départ</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-soft);">00:00 <span>→</span> 23:59</div>
+        <div class="range-track"><div class="fill"></div><div class="handle" style="left:0;"></div><div class="handle" style="left:100%;"></div></div>
+      </div>
+    </details>
+
+    <details class="filter-group">
+      <summary>Filtres d'accessibilité</summary>
+      <div class="fg-body">
+        <label class="check-item"><input type="checkbox">Assistance en fauteuil roulant à l'embarquement</label>
+        <label class="check-item"><input type="checkbox">Sièges pour mobilité réduite</label>
+        <label class="check-item"><input type="checkbox">Autorisation chien d'assistance</label>
+      </div>
+    </details>
+
+    <details class="filter-group">
+      <summary>Compagnies</summary>
+      <div class="fg-body" id="airlineFilters">
+        <!-- Rempli dynamiquement -->
+      </div>
+    </details>
+  </aside>
+
+  <main>
+    <div class="results-top">
+      <div class="results-count" id="resultsCount">Recherche de vols...</div>
+      <button class="ai-refine"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/></svg>Affiner avec l'IA</button>
+    </div>
+
+    <div id="resultsContainer"></div>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <img class="logo-img" src="https://ukbekfcjfcjcqrpxfpmq.supabase.co/storage/v1/object/public/logo%20luvia/LUVIA%20TRAVEL%20LOGO%20SANS%20BACKGROUND.png" alt="LuviaPlace">
+        <p>La plateforme de voyage pensée depuis et pour l'Afrique centrale — hébergement, vols, expériences, assurance et voiture.</p>
+      </div>
+      <div class="footer-col"><h5>Explorer</h5><a href="resultats-hebergement.html">Hébergement</a><a href="resultats-vols.html">Vols</a><a href="resultats-experiences.html">Expériences</a></div>
+      <div class="footer-col"><h5>Services</h5><a href="resultats-assurance.html">Assurance</a><a href="resultats-voiture.html">Voiture</a><a href="#">Rewards</a></div>
+      <div class="footer-col"><h5>Entreprise</h5><a href="#">À propos</a><a href="#">Carrières</a><a href="#">Contact</a></div>
+      <div class="footer-col"><h5>Légal</h5><a href="#">Conditions générales</a><a href="#">Confidentialité</a></div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 LuviaPlace — Kinshasa, RDC</span>
+      <span>Fait pour l'Afrique centrale</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ============================================
+// CONNEXION BACKEND - VOLS
+// ============================================
+
+var API_BASE_URL = 'https://luviaplace-v2.onrender.com/api';
+var params = new URLSearchParams(window.location.search);
+
+// ============================================
+// SKELETON
+// ============================================
+function generateSkeleton() {
+  var container = document.getElementById('resultsContainer');
+  var html = '';
+  for (var i = 0; i < 6; i++) {
+    html += `
+      <div class="skeleton-flight">
+        <div class="skeleton-line w70"></div>
+        <div class="skeleton-line w50"></div>
+        <div class="skeleton-line w40"></div>
+        <div class="skeleton-line w30"></div>
+        <div class="skeleton-line w60"></div>
+      </div>
+    `;
+  }
+  container.innerHTML = html;
+}
+
+// ============================================
+// RECHERCHE VOLS
+// ============================================
+function searchFlights(params) {
+  var legs = params.legs || [];
+  return fetch(API_BASE_URL + '/search-flights', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      legs: legs,
+      adults: params.adults || 1,
+      children: params.children || 0,
+      infants: params.infants || 0,
+      currency: 'USD',
+      country: 'US',
+      cabinClass: params.cabin || 'ECONOMY',
+      environment: 'production'
+    })
+  })
+  .then(function(response) { return response.json(); })
+  .then(function(data) { return data.success ? data.data : null; })
+  .catch(function() { return null; });
+}
+
+// ============================================
+// AFFICHAGE DES RÉSULTATS VOLS
+// ============================================
+function displayFlights(data) {
+  var container = document.getElementById('resultsContainer');
+  var count = document.getElementById('resultsCount');
+
+  if (!data || !data[0] || !data[0].journeys || data[0].journeys.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:60px;color:var(--ink-soft);">
+        <h3>Aucun vol trouvé</h3>
+        <p>Essayez de modifier votre origine, destination ou dates.</p>
+      </div>
+    `;
+    count.textContent = '0 résultat';
+    return;
+  }
+
+  var journeys = data[0].journeys || [];
+  count.textContent = journeys.length + ' vols trouvés';
+
+  container.innerHTML = '';
+
+  for (var i = 0; i < Math.min(journeys.length, 20); i++) {
+    var journey = journeys[i];
+    var offers = journey.offers || [];
+    var bestOffer = offers[0] || null;
+    var segments = journey.segments || [];
+
+    var price = bestOffer ? (bestOffer.pricing?.display?.total || 'N/A') : 'N/A';
+    var currency = bestOffer ? (bestOffer.pricing?.display?.currency || 'USD') : 'USD';
+    var airline = segments[0]?.carrier?.marketingName || 'Compagnie inconnue';
+    var airlineCode = segments[0]?.carrier?.marketingCode || 'XX';
+    var duration = journey.totalDuration?.iso8601 || 'N/A';
+
+    var legHtml = '';
+    var legIndex = 0;
+    var legLabels = ['Aller', 'Retour'];
+
+    for (var s = 0; s < segments.length; s++) {
+      var seg = segments[s];
+      var legLabel = legLabels[legIndex] || 'Segment ' + (s + 1);
+      var isNewLeg = (s === 0 || seg.direction !== segments[s-1]?.direction);
+      if (isNewLeg && s > 0) legIndex++;
+      
+      var code = legLabels[legIndex] || 'Segment';
+      
+      legHtml += `
+        <div class="flight-leg">
+          <div class="leg-label"><b>${legLabels[legIndex] || 'Vol'}</b>${seg.departureTime ? new Date(seg.departureTime).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}</div>
+          <div class="airline-badge">${airlineCode}</div>
+          <div class="flight-route">
+            <div class="flight-time">${seg.departureTime ? new Date(seg.departureTime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '--:--'}<span class="code">${seg.originCode || '???'}</span></div>
+            <div class="flight-line-wrap">
+              <div class="flight-line"><div class="stop-dot"></div></div>
+              <div class="flight-meta">${seg.duration?.minutes ? Math.round(seg.duration.minutes / 60) + 'h ' + (seg.duration.minutes % 60) + 'm' : 'N/A'}</div>
+            </div>
+            <div class="flight-time">${seg.arrivalTime ? new Date(seg.arrivalTime).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '--:--'}<span class="code">${seg.destinationCode || '???'}</span></div>
+          </div>
+        </div>
+      `;
+    }
+
+    var div = document.createElement('div');
+    div.className = 'flight-result';
+    div.innerHTML = `
+      <div class="price-top">
+        <div class="amount">${currency} ${typeof price === 'number' ? price.toFixed(2) : price}</div>
+        <div class="note">Total, 1 passager</div>
+      </div>
+      ${legHtml}
+      <div class="flight-bottom">
+        <div class="amenity-icons">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="7" width="12" height="14" rx="1"/><path d="M9 7V4h6v3"/></svg>
+        </div>
+        <a class="details-link" onclick="alert('Détails du vol ${airline}')">Détails</a>
+        <button class="cta-btn-sm" onclick="alert('Réservation pour ${airline}')">Voir les tarifs</button>
+      </div>
+    `;
+    container.appendChild(div);
+  }
+}
+
+// ============================================
+// SWAP ORIGINE/DESTINATION
+// ============================================
+function swapFlight() {
+  var origin = document.getElementById('flightOrigin');
+  var dest = document.getElementById('flightDest');
+  var temp = origin.textContent;
+  origin.textContent = dest.textContent;
+  dest.textContent = temp;
+}
+
+// ============================================
+// INITIALISATION
+// ============================================
+function loadResults() {
+  var origin = params.get('origin') || 'Kinshasa (FIH)';
+  var destination = params.get('destination') || 'Bruxelles (BRU)';
+  var departure = params.get('departure') || '';
+  var returnDate = params.get('return') || '';
+  var adults = parseInt(params.get('adults') || '1', 10);
+
+  document.getElementById('flightOrigin').textContent = origin;
+  document.getElementById('flightDest').textContent = destination;
+  document.getElementById('flightDates').textContent = departure ? (returnDate ? new Date(departure).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ' - ' + new Date(returnDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : new Date(departure).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })) : 'Sélectionnez vos dates';
+  document.getElementById('flightPassengers').textContent = adults + ' Passager' + (adults > 1 ? 's' : '') + ' · Économie';
+
+  generateSkeleton();
+
+  if (origin && destination && departure) {
+    var legs = [
+      { origin: origin.split('(')[0].trim() || origin, destination: destination.split('(')[0].trim() || destination, date: departure }
+    ];
+    if (returnDate) {
+      legs.push({ origin: destination.split('(')[0].trim() || destination, destination: origin.split('(')[0].trim() || origin, date: returnDate });
+    }
+
+    searchFlights({ legs: legs, adults: adults })
+      .then(function(results) { displayFlights(results); })
+      .catch(function() {
+        document.getElementById('resultsContainer').innerHTML = `
+          <div style="text-align:center;padding:60px;color:var(--ink-soft);">
+            <h3>❌ Une erreur est survenue</h3>
+            <p>Veuillez réessayer plus tard.</p>
+          </div>
+        `;
+      });
+  } else {
+    document.getElementById('resultsContainer').innerHTML = `
+      <div style="text-align:center;padding:60px;color:var(--ink-soft);">
+        <h3>Paramètres de recherche manquants</h3>
+        <p>Veuillez retourner à la page d'accueil et effectuer une recherche.</p>
+        <a href="index.html" style="display:inline-block;margin-top:16px;padding:10px 20px;background:var(--blue);color:#FFF;border-radius:var(--radius);text-decoration:none;">Retour à l'accueil</a>
+      </div>
+    `;
+    document.getElementById('resultsCount').textContent = 'Paramètres manquants';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadResults);
+
+// ============================================
+// SWITCHER
+// ============================================
+var btn = document.getElementById('switcherBtn');
+var menu = document.getElementById('switcherMenu');
+btn.addEventListener('click', function(e) { e.stopPropagation(); menu.classList.toggle('open'); });
+document.addEventListener('click', function() { menu.classList.remove('open'); });
+</script>
+</body>
+</html>
